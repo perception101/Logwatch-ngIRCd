@@ -1,0 +1,257 @@
+#!/usr/bin/perl
+##########################################################################
+# ngircd
+##########################################################################
+
+use Logwatch ':all';
+
+my $Detail = $ENV{'LOGWATCH_DETAIL_LEVEL'} || 0;
+my $Debug = $ENV{'LOGWATCH_DEBUG'} || 0;
+my $DebugCounter = 0;
+
+my %FailedLogin = ();
+my %FailedOpers = ();
+my $FailedOpCommands;
+my %TriedConnections = ();
+my %GoodConnectionsi = ();
+my %GoodOper = () ;
+my %BadOpCommands = ();
+my %OtherList = ();
+
+if ( $Debug >= 5 ) {
+        print STDERR "\n\nDEBUG: Inside ngircd Filter \n\n";
+        $DebugCounter = 1;
+}
+
+while (defined(my $ThisLine = <STDIN>)) {
+   if ( $Debug >= 5 ) {
+      print STDERR "DEBUG($DebugCounter): $ThisLine";
+      $DebugCounter++;
+   }
+
+   chomp($ThisLine);
+   if ( # We don't care about these
+      ( $ThisLine =~ m/connection .* shutting down / ) or
+      ( $ThisLine =~ m/^New TLSv1 connection using cipher/ ) or
+      ( $ThisLine =~ m/^Now listening on/ ) or
+      ( $ThisLine =~ m/^IO subsystem: epoll/ ) or
+      ( $ThisLine =~ m/^Reading configuration from/ ) or
+      ( $ThisLine =~ m/^ngircd .* started/ ) or
+      ( $ThisLine =~ m/^Created pre-defined channel/ ) or
+      ( $ThisLine =~ m/^Not running with changed root directory/ ) or
+      ( $ThisLine =~ m/^Notice: Can't change working directory to/ ) or
+      ( $ThisLine =~ m/^getnameinfo: Can't resolve address/ ) or
+      ( $ThisLine =~ m/^Shutting down all listening sockets/ ) or
+      ( $ThisLine =~ m/^ServerUID must not be 0, using/ ) or
+      ( $ThisLine =~ m/^OpenSSL .* initialized/ ) or
+      ( $ThisLine =~ m/^Configuration option .* not set/ ) or
+      ( $ThisLine =~ m/^User .* unregistered/ ) or
+      ( $ThisLine =~ m/^Server restarting NOW/ ) or
+      ( $ThisLine =~ m/^Server going down NOW/ ) or
+      ( $ThisLine =~ m/^Shutting down connection .* \(Got QUIT command\.\)/ ) or
+      ( $ThisLine =~ m/^Connection .* with .* closed / ) or
+      ( $ThisLine =~ m/^Running as user/ ) or
+      ( $ThisLine =~ m/^Shutting down connection .* \(Server going down/ ) or
+      ( $ThisLine =~ m/^Shutting down connection .* \(Socket closed/ ) or
+      ( $ThisLine =~ m/^Shutting down connection .* \(Ping timeout/ ) or
+      ( $ThisLine =~ m/is closing the connection/ ) or
+      ( $ThisLine =~ m/^ngircd done/ ) or
+      ( $ThisLine =~ m/^Client unregistered/ ) or
+      ( $ThisLine =~ m/^Client .* unregistered/ ) or
+      ( $ThisLine =~ m/^User .* changed nick/ ) or
+      0  # Always last in the list, so all above can say "or" at the end
+   ) {
+      # We don't care about these
+   } elsif ( my ($Host) = ($ThisLine =~ /Accepted connection .* from ([\d\.]+)/ )) {
+      $TriedConnections{$Host}++;
+   } elsif ( my ($User,$Connection) = ($ThisLine =~ /^User \"([^ ]+)!([^ ]+)\" registered /)) {
+      $GoodConnections{$Connection}++;
+   } elsif ( my ($User,$Connection) = ($ThisLine =~ /^Got invalid OPER from \"([^ ]+)!([^ ]+)\": / )) {
+      $FailedOpers{$Connection}++;
+   } elsif ( my ($User,$Connection) = ($ThisLine =~ /^No privileges: client \"([^ ]+)!([^ ]+)\", command / )) {
+      $BadOpCommands{$Connection}++;
+   } elsif ( my ($Host) = ($ThisLine =~ /^Shutting down connection .* \(Bad password\) with ([^ ]*):/)) {
+      $FailedLogin{$Host}++;
+   } elsif ( my ($User,$Connection) = ($ThisLine =~ /^Got valid OPER from \"([^ ]+)!([^ ]+)\", user is an IRC operator now/ )) {
+      $GoodOper{$Connection}++;
+   } else {
+      # Report any unmatched entries...
+      $OtherList{$ThisLine}++;
+   }
+}
+
+#######################################################
+
+# IRCop commands from regular folk
+# detail 0-4 list total, detail 5+ show everything
+
+if ($Detail >=0) {
+   if (keys %BadOpCommands) {
+      if ($Detail <= 4) {
+         print "\nIRCop commands from regular users: ";
+         my $keycount = 0;
+         my $totcount = 0;
+         foreach my $key (keys %BadOpCommands) {
+            $keycount++;
+            $totcount += $BadOpCommands{$key};
+         }
+         print "$totcount (from $keycount sources)\n";
+      } else {
+         print "\nIRCop commands from regular users:\n";
+         foreach my $key (keys %BadOpCommands) {
+            my $totcount = 0;
+            $totcount += $BadOpCommands{$key};
+            my $plural = ($totcount > 1) ? "s" : "";
+            print "   $key: $totcount time$plural\n";
+         }
+      }
+   }
+}
+
+# Failed login attempts
+# 0-4 list the totals
+# 5+ show the detail
+
+if ($Detail >=0) {
+   if (keys %FailedLogin) {
+      if ($Detail <= 4) {
+         print "\nFailed logins (bad password): ";
+         my $keycount = 0;
+         my $totcount = 0;
+         foreach my $key (keys %FailedLogin) {
+            $keycount++;
+            $totcount += $FailedLogin{$key};
+         }
+         print "$totcount (from $keycount sources)\n";
+      } else {
+         print "\nFailed logins (bad password):\n";
+         foreach my $key (keys %FailedLogin) {
+            my $totcount = 0;
+            $totcount += $FailedLogin{$key};
+            my $plural = ($totcount > 1) ? "s" : "";
+            print "   $key: $totcount time$plural\n";
+         }
+      }
+   }
+}
+
+# information about failed upgrades to ircop
+# detail 0-4 count
+# detail 5+ list of all
+if ($Detail >=0) {
+   if (keys %FailedOpers) {
+      if ($Detail <= 4) {
+         print "\nFailed attempts to become IRCops: ";
+         my $keycount = 0;
+         my $totcount = 0;
+         foreach my $key (keys %FailedOpers) {
+            $keycount++;
+            $totcount += $FailedOpers{$key};
+         }
+         print "$totcount (from $keycount sources)\n";
+      } else {
+         print "\nFailed attempts to become IRCops:\n";
+         foreach my $key (keys %FailedOpers) {
+            my $totcount = 0;
+            $totcount += $FailedOpers{$key};
+            my $plural = ($totcount > 1) ? "s" : "";
+            print "   $key: $totcount time$plural\n";
+         }
+      }
+   }
+}
+
+# information about successful upgrades to ircop
+# detail 0-4 nothing
+# detail 5-9 count
+# detail 10+ list of all
+if ($Detail >=5) {
+   if (keys %GoodOper) {
+      if ($Detail <= 9) {
+         print "\nSuccessful attempts to become IRCops: ";
+         my $keycount = 0;
+         my $totcount = 0;
+         foreach my $key (keys %GoodOper) {
+            $keycount++;
+            $totcount += $GoodOper{$key};
+         }
+         print "$totcount (from $keycount sources)\n";
+      } else {
+         print "\nSuccessful attempts to become IRCops:\n";
+         foreach my $key (keys %GoodOper) {
+            my $totcount = 0;
+            $totcount += $GoodOper{$key};
+            my $plural = ($totcount > 1) ? "s" : "";
+            print "   $key: $totcount time$plural\n";
+         }
+      }
+   }
+}
+
+# information about attempted connections
+# detail 0-4 nothing
+# detail 5-9 count of good connections
+# detail 10+ list of all connections
+
+if ($Detail >=5) {
+   if (keys %TriedConnections) {
+      if ($Detail <= 9) {
+         print "\nAttempted connections: ";
+         my $keycount = 0;
+         my $totcount = 0;
+         foreach my $key (keys %TriedConnections) {
+            $keycount++;
+            $totcount += $TriedConnections{$key};
+         }
+         print "$totcount (from $keycount sources)\n";
+      } else {
+         print "\nAttempted connections from:\n";
+         foreach my $key (sort SortIP keys %TriedConnections) {
+            my $name = LookupIP($key);
+            my $totcount = 0;
+            $totcount += $TriedConnections{$key};
+            my $plural = ($totcount > 1) ? "s" : "";
+            print "   $name: $totcount time$plural\n";
+         }
+      }
+   }
+}
+
+# information about successfull connections
+# detail 0-4 nothing
+# detail 5-9 count of good connections
+# detail 10+ list of all connections
+
+if ($Detail >=5) {
+   if (keys %GoodConnections) {
+      if ($Detail <= 9) {
+         print "\nGood connections: ";
+         my $keycount = 0;
+         my $totcount = 0;
+         foreach my $key (keys %GoodConnections) {
+            $keycount++;
+            $totcount += $GoodConnections{$key};
+         }
+         print "$totcount (from $keycount sources)\n";
+      } else {
+         print "\nGood connections from:\n";
+         foreach my $key (keys %GoodConnections) {
+            my $totcount = 0;
+            $totcount += $GoodConnections{$key};
+            my $plural = ($totcount > 1) ? "s" : "";
+            print "   $key: $totcount time$plural\n";
+         }
+      }
+   }
+}
+
+if (keys %OtherList) {
+   print "\n**Unmatched Entries**\n";
+   foreach $line (sort {$OtherList{$b}<=>$OtherList{$a} } keys %OtherList) {
+      print "   $line: $OtherList{$line} Time(s)\n";
+   }
+}
+
+exit(0);
+
+# vi: shiftwidth=3 tabstop=3 et
