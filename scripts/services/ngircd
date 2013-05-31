@@ -2,8 +2,12 @@
 ##########################################################################
 # ngircd
 ##########################################################################
+#
+# version 0.2
+#
 
 use Logwatch ':all';
+use Regexp::IPv6 qw($IPv6_re);
 
 my $Detail = $ENV{'LOGWATCH_DETAIL_LEVEL'} || 0;
 my $Debug = $ENV{'LOGWATCH_DEBUG'} || 0;
@@ -32,6 +36,7 @@ while (defined(my $ThisLine = <STDIN>)) {
    chomp($ThisLine);
    if ( # We don't care about these
       ( $ThisLine =~ m/connection .* shutting down / ) or
+      ( $ThisLine =~ m/initialized TLSv1 using cipher / ) or
       ( $ThisLine =~ m/^New TLSv1 connection using cipher/ ) or
       ( $ThisLine =~ m/^Now listening on/ ) or
       ( $ThisLine =~ m/^IO subsystem: epoll/ ) or
@@ -63,6 +68,8 @@ while (defined(my $ThisLine = <STDIN>)) {
    ) {
       # We don't care about these
    } elsif ( my ($Host) = ($ThisLine =~ /Accepted connection .* from ([\d\.]+)/ )) {
+      $TriedConnections{$Host}++;
+   } elsif ( my ($Host) = ($ThisLine =~ /Accepted connection .* from \[($IPv6_re)/ )) {
       $TriedConnections{$Host}++;
    } elsif ( my ($User,$Connection) = ($ThisLine =~ /^User \"([^ ]+)!([^ ]+)\" registered /)) {
       $GoodConnections{$Connection}++;

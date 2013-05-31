@@ -1,0 +1,8 @@
+2013-05-31
+  version 0.2
+
+  Script now requires Regexp::IPv6
+  Script now detects connections from ip6v addresses (partially tested)
+
+  Run against ngircd Version: 19.2-2 (Debian Wheezy) recompiled with
+    OpenSSL rather than GnuTLS support.
